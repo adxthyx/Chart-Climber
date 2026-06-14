@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+/*
+  Design system — Reddit-inspired.
+  Brand orange (#FF4500) is the single accent. Surfaces use a layered scale
+  (canvas < card < elevated) in both themes. Tokens live as raw HSL triplets so
+  they can be alpha-composited; @theme inline wraps them in hsl() for utilities.
+  Dark mode is class-based (next-themes attribute="class").
+*/
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --canvas: 210 17% 95%;
+  --background: 0 0% 100%;
+  --foreground: 210 11% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 11% 11%;
+  --elevated: 210 17% 98%;
+  --muted: 210 17% 95%;
+  --muted-foreground: 215 9% 42%;
+  --border: 214 15% 89%;
+  --ring: 16 100% 50%;
+
+  --brand: 16 100% 50%; /* #FF4500 */
+  --brand-hover: 16 100% 45%;
+  --brand-foreground: 0 0% 100%;
+
+  --up: 142 71% 38%;
+  --down: 0 74% 52%;
+
+  --radius: 0.875rem;
+}
+
+.dark {
+  --canvas: 200 33% 6%; /* #0b1416 */
+  --background: 200 33% 6%;
+  --foreground: 210 17% 93%;
+  --card: 204 17% 9%; /* #14181c */
+  --card-foreground: 210 17% 93%;
+  --elevated: 206 14% 13%; /* #1b2226 */
+  --muted: 206 14% 13%;
+  --muted-foreground: 210 8% 62%;
+  --border: 199 13% 19%;
+  --ring: 16 100% 55%;
+
+  --brand: 16 100% 50%;
+  --brand-hover: 16 100% 56%;
+  --brand-foreground: 0 0% 100%;
+
+  --up: 142 60% 48%;
+  --down: 0 80% 63%;
+}
+
+@theme inline {
+  --color-canvas: hsl(var(--canvas));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-elevated: hsl(var(--elevated));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-border: hsl(var(--border));
+  --color-ring: hsl(var(--ring));
+
+  --color-brand: hsl(var(--brand));
+  --color-brand-hover: hsl(var(--brand-hover));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+
+  --color-up: hsl(var(--up));
+  --color-down: hsl(var(--down));
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --radius-xl2: calc(var(--radius) + 0.375rem);
+
+  --animate-fade-up: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade-in: fade-in 0.5s ease both;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  html,
+  body {
+    height: 100%;
+  }
+  body {
+    background-color: hsl(var(--canvas));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background-color: hsl(var(--brand) / 0.25);
+  }
+}
+
+@layer components {
+  /* Glass card surface, theme-aware. */
+  .card-surface {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius);
+  }
+  .glass {
+    background-color: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.8);
+  }
+  .text-gradient {
+    background-image: linear-gradient(120deg, hsl(var(--brand)), #ff8a4c);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .bg-brand-gradient {
+    background-image: linear-gradient(120deg, #ff4500, #ff7a45);
+  }
+  /* Soft radial brand glow for hero / section backgrounds. */
+  .glow-brand {
+    background:
+      radial-gradient(60% 50% at 50% 0%, hsl(var(--brand) / 0.18), transparent 70%);
+  }
+  .focus-ring {
+    outline: none;
+  }
+  .focus-ring:focus-visible {
+    box-shadow: 0 0 0 2px hsl(var(--canvas)), 0 0 0 4px hsl(var(--ring));
+  }
+}
+
+@layer utilities {
+  .no-touch-scroll {
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Themed scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
