@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "gen:data": "tsx scripts/gen-data.mts"
+    "gen:data": "tsx scripts/fetch-real-data.mts"
   },
   "dependencies": {
     "lucide-react": "^1.18.0",

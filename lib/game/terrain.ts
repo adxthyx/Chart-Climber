@@ -8,10 +8,11 @@ import {
   CAT_HEAD,
   FLOOR_OFFSET,
   FUEL_SPACING,
+  MAX_STEP_RETURN,
+  PX_PER_RETURN,
   RESAMPLE_SUB,
   RUNWAY_SEGMENTS,
   SEGMENT_W,
-  TERRAIN_HEIGHT,
   TERRAIN_TOP,
 } from './constants';
 import type { Terrain, Vec2 } from './types';
@@ -69,28 +70,43 @@ const TERRAIN_OPTS = {
 
 export function buildTerrain(points: PricePoint[]): Terrain {
   const closes = points.map((p) => p.close);
+  const n = closes.length;
   const minPrice = Math.min(...closes);
   const maxPrice = Math.max(...closes);
-  const span = maxPrice - minPrice || 1;
 
-  // Price -> canvas y: highest price sits at TERRAIN_TOP (highest hill = smallest y).
-  const yOf = (close: number) =>
-    TERRAIN_TOP + (1 - (close - minPrice) / span) * TERRAIN_HEIGHT;
+  // Price -> height via CUMULATIVE LOG RETURNS at a fixed vertical scale. Each
+  // day's % move becomes the same steepness regardless of the asset's absolute
+  // price or total range — a +5% day is always a real hill. This replaces the
+  // old global min/max normalization that squashed every move into a fixed band
+  // and made large % moves look like tiny bumps. Terrain grows as tall as the
+  // cumulative move demands; the camera follows vertically.
+  const cum = new Array<number>(n);
+  cum[0] = 0;
+  for (let i = 1; i < n; i++) {
+    let r = Math.log(closes[i] / closes[i - 1]);
+    if (!Number.isFinite(r)) r = 0; // guard against zero/negative bad ticks
+    r = Math.max(-MAX_STEP_RETURN, Math.min(MAX_STEP_RETURN, r));
+    cum[i] = cum[i - 1] + r;
+  }
+  // Higher cumulative return = higher hill = smaller y. Anchor the highest point
+  // of the whole climb at TERRAIN_TOP; the surface descends from there.
+  const rawY = cum.map((c) => -c * PX_PER_RETURN);
+  const minRawY = Math.min(...rawY);
+  const dataY = rawY.map((y) => TERRAIN_TOP + (y - minRawY));
 
   // Flat runway so the bike spawns safely, then the real chart, then a flat tail.
   const mapped: MappedPoint[] = [];
-  const firstY = yOf(closes[0]);
   for (let i = 0; i < RUNWAY_SEGMENTS; i++) {
-    mapped.push({ x: i * SEGMENT_W, y: firstY, close: closes[0] });
+    mapped.push({ x: i * SEGMENT_W, y: dataY[0], close: closes[0] });
   }
   const dataStartX = RUNWAY_SEGMENTS * SEGMENT_W;
-  points.forEach((p, i) => {
-    mapped.push({ x: dataStartX + i * SEGMENT_W, y: yOf(p.close), close: p.close });
-  });
+  for (let i = 0; i < n; i++) {
+    mapped.push({ x: dataStartX + i * SEGMENT_W, y: dataY[i], close: closes[i] });
+  }
   const lastX = mapped[mapped.length - 1].x;
-  const lastClose = closes[closes.length - 1];
+  const lastClose = closes[n - 1];
   for (let i = 1; i <= RUNWAY_SEGMENTS; i++) {
-    mapped.push({ x: lastX + i * SEGMENT_W, y: yOf(lastClose), close: lastClose });
+    mapped.push({ x: lastX + i * SEGMENT_W, y: dataY[n - 1], close: lastClose });
   }
 
   // Smoothed render/collision surface.
@@ -99,7 +115,9 @@ export function buildTerrain(points: PricePoint[]): Terrain {
     RESAMPLE_SUB,
   );
 
-  const floorY = TERRAIN_TOP + TERRAIN_HEIGHT + FLOOR_OFFSET;
+  // Floor sits below the lowest point of the surface (unbounded height now).
+  const lowestSurfaceY = mapped.reduce((m, p) => (p.y > m ? p.y : m), -Infinity);
+  const floorY = lowestSurfaceY + FLOOR_OFFSET;
   const worldWidth = surface[surface.length - 1].x;
 
   // Per-segment direction for green/red tinting: lower y = higher price = "up".

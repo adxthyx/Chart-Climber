@@ -39,8 +39,8 @@ const FEATURES = [
   },
   {
     icon: Globe,
-    title: 'Live or illustrative',
-    body: 'Ships with seeded synthetic series for every asset. Add a key and crypto streams live CoinGecko prices.',
+    title: 'Real market data',
+    body: 'Ships with real historical price snapshots for every asset. Add a key and crypto streams live CoinGecko prices.',
   },
   {
     icon: Smartphone,

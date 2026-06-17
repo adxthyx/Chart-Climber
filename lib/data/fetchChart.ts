@@ -1,7 +1,7 @@
 import { STATIC_SERIES } from './static/registry';
 import type { ChartSeries, Range } from './types';
 
-// Bundled illustrative series — always available, never fails.
+// Bundled real historical snapshot — always available, never fails.
 export function staticChart(symbol: string, range: Range): ChartSeries {
   const key = `${symbol}_${range}`;
   const series = STATIC_SERIES[key];

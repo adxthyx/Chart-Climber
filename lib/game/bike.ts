@@ -37,9 +37,9 @@ export function buildBike(startX: number, startY: number): Bike {
 
   const wheelOpts = {
     density: 0.0012,
-    friction: 0.95,
-    frictionStatic: 1.2,
-    restitution: 0.08,
+    friction: 1.0,
+    frictionStatic: 1.6,
+    restitution: 0.05,
     collisionFilter: { group: BIKE_GROUP, category: CAT_WHEEL, mask: CAT_TERRAIN },
   } as const;
 

@@ -5,9 +5,9 @@ export const GRAVITY = 1.4; // Matter world gravity scale
 // Smooth accel: angular acceleration in rad/sec applied to wheel(s).
 // At 60fps: per-step delta = WHEEL_TORQUE / 60. Spin-up to MAX_WHEEL_SPEED
 // takes ~MAX_WHEEL_SPEED / (WHEEL_TORQUE/60) ≈ 10 frames = 0.17 s.
-export const WHEEL_TORQUE = 5.1; // rad/sec (was per-step; now rate-limited)
-export const MAX_WHEEL_SPEED = 0.85; // clamp on wheel angular velocity (rad/step)
-export const BRAKE_TORQUE = 8.0; // rad/sec — braking is sharper than acceleration
+export const WHEEL_TORQUE = 28; // rad/sec spin-up rate — high so throttle responds in ~2 frames (crisp, not mushy)
+export const MAX_WHEEL_SPEED = 1.6; // clamp on wheel angular velocity (rad/step) — more climb power + top speed
+export const BRAKE_TORQUE = 22; // rad/sec — braking is sharper than acceleration
 export const SUSPENSION_STIFFNESS = 0.9; // firmer axle; reduces horizontal wobble
 // Pitch torque applied to the chassis on input — this is what makes wheelies and
 // flips possible (gas pitches the nose up, brake pitches it down). Over-rotating
@@ -18,12 +18,16 @@ export const PITCH_TORQUE = 0.1;
 export const FLIP_BONUS = 300; // portfolio bonus per full mid-air flip
 
 // --- Terrain ---
-export const SEGMENT_W = 90; // px between adjacent price points (world x)
-export const TERRAIN_HEIGHT = 600; // px height band the price range maps into
-export const TERRAIN_TOP = 120; // top padding above the highest price
-export const FLOOR_OFFSET = 400; // depth of the solid ground below the surface
+export const SEGMENT_W = 60; // px between adjacent price points (world x)
+// Vertical scale: px of rise per unit log-return. A day's % move maps to a
+// FIXED steepness regardless of the asset's absolute price or total range, so a
+// +5% day is always a real hill (no global min/max squashing). Tune feel here.
+export const PX_PER_RETURN = 1800; // px per 1.0 log-return (~+5% day ≈ 88px rise)
+export const MAX_STEP_RETURN = 0.12; // clamp |per-day log-return| so gaps/bad ticks can't make vertical walls
+export const TERRAIN_TOP = 120; // px padding above the highest point of the climb
+export const FLOOR_OFFSET = 400; // depth of solid ground below the lowest surface point
 export const RUNWAY_SEGMENTS = 4; // flat segments before the first data point
-export const RESAMPLE_SUB = 3; // Catmull-Rom sub-points per segment (1 = none)
+export const RESAMPLE_SUB = 3; // Catmull-Rom sub-points per segment (1 = none) — ramps sharp days so they stay drivable
 
 // --- Bike ---
 export const CHASSIS_W = 70;
@@ -40,10 +44,10 @@ export const FUEL_BURN_RATE = 4.0; // units per second while accelerating
 export const FUEL_REFILL = 45; // units restored per fuel can
 export const FUEL_SPACING = 3000; // world-x px between fuel cans along the track
 export const COIN_VALUE = 50;
-export const DISTANCE_MULTIPLIER = 0.1; // portfolio value per world-x px
+export const DISTANCE_MULTIPLIER = 0.2; // portfolio value per world-x px — doubled to offset halved SEGMENT_W
 
 // --- Camera ---
-export const CAMERA_LERP = 0.08;
+export const CAMERA_LERP = 0.16; // snappier follow — 0.08 dragged ~30 frames behind, felt laggy
 export const CAMERA_LOOKAHEAD = 160; // px ahead in travel direction
 export const CAMERA_Y_OFFSET = -60; // raise view so bike sits lower-third
 

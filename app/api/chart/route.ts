@@ -70,7 +70,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       points = await fetchEquity(symbol, range, profile.class === 'india');
     }
     if (points.length < 5) throw new Error('too few points');
-    const series: ChartSeries = { meta: metaOf(profile), range, points, illustrative: false };
+    const series: ChartSeries = { meta: metaOf(profile), range, points, live: true };
     return NextResponse.json(series);
   } catch {
     return NextResponse.json(staticChart(symbol, range));

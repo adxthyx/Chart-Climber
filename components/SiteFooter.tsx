@@ -7,8 +7,8 @@ export function SiteFooter() {
       <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-4 px-5 py-10 text-center sm:px-8">
         <Logo />
         <p className="max-w-md text-sm text-muted-foreground">
-          A playable take on market data. Bundled charts are seeded synthetic series; crypto can
-          optionally stream live prices.
+          A playable take on market data. Bundled charts are real historical price snapshots; crypto
+          can optionally stream live prices.
         </p>
         <div className="flex items-center gap-5 text-sm text-muted-foreground">
           <Link href="/play" className="transition hover:text-foreground">
