@@ -14,7 +14,7 @@ Hill-Climb-Racing-style browser game where the terrain is a stock/crypto price c
 npm run dev          # dev server on :3000
 npm run build        # production build
 npm run lint         # ESLint
-npm run gen:data     # regenerate lib/data/static/*.json + registry.ts (seeded, deterministic)
+npm run gen:data     # refetch real historical prices from Yahoo Finance into lib/data/static/*.json + registry.ts
 ```
 
 No env vars required. Optional: `STOCK_API_KEY=your_key npm run dev` enables live equity data.
@@ -25,11 +25,11 @@ No env vars required. Optional: `STOCK_API_KEY=your_key npm run dev` enables liv
 
 ### Data layer (`lib/data/`)
 
-- `assets.ts` — asset catalog (AAPL, TSLA, NVDA, RELIANCE, TCS, INFY, BTC, ETH) + `ASSET_BY_SYMBOL` map
-- `types.ts` — `PricePoint`, `ChartSeries`, `Range` (`1M | 6M | 1Y | 5Y`)
-- `static/registry.ts` + `static/*.json` — bundled illustrative series, keyed `${SYMBOL}_${RANGE}`
+- `assets.ts` — asset catalog metadata only (AAPL, TSLA, NVDA, RELIANCE, TCS, INFY, BTC, ETH) + `ASSET_BY_SYMBOL` map. No synthetic price params — all series are real market data.
+- `types.ts` — `PricePoint`, `ChartSeries` (`live` = true when fetched live this session, false for bundled snapshot), `Range` (`1M | 6M | 1Y | 5Y`)
+- `static/registry.ts` + `static/*.json` — bundled REAL historical price snapshots, keyed `${SYMBOL}_${RANGE}`
 - `fetchChart.ts` — `getChart(symbol, range)` tries `/api/chart` proxy first, falls back to static; `staticChart()` is the infallible path
-- `generate.ts` + `scripts/gen-data.mts` — seeded deterministic generator for bundled JSON
+- `scripts/fetch-real-data.mts` (`npm run gen:data`) — fetches real daily history from Yahoo Finance (US tickers as-is, `.NS` for India, `-USD` for crypto) into the bundled JSON. No data is ever synthesized.
 - `sparkline.ts` — `sparkAllRanges(symbol)` for the picker preview thumbnails
 
 ### API route (`app/api/chart/route.ts`)

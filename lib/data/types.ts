@@ -18,7 +18,7 @@ export type ChartSeries = {
   meta: AssetMeta;
   range: Range;
   points: PricePoint[];
-  illustrative: boolean; // true for bundled synthetic data, false for live
+  live: boolean; // true = fetched live this session; false = bundled real historical snapshot
 };
 
 export const RANGES: Range[] = ['1M', '6M', '1Y', '5Y'];
