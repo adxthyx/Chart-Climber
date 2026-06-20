@@ -1,8 +1,11 @@
 import Matter, { type Body } from 'matter-js';
 import type { PricePoint } from '@/lib/data/types';
-import { applyPitch, buildBike, driveWheels, type Bike } from './bike';
+import { applyAirPitch, applyEngineTorque, balanceChassis, brakeReverse, buildBike, type Bike } from './bike';
 import { createCamera, type Camera } from './camera';
 import {
+  BALANCE_KD,
+  BALANCE_KP,
+  BALANCE_MAX_TORQUE,
   BRAKE_TORQUE,
   CAT_TERRAIN,
   COIN_VALUE,
@@ -12,11 +15,14 @@ import {
   FUEL_MAX,
   FUEL_REFILL,
   GRAVITY,
-  MAX_WHEEL_SPEED,
   PITCH_TORQUE,
+  REVERSE_TORQUE,
   RUNWAY_SEGMENTS,
   SEGMENT_W,
-  WHEEL_TORQUE,
+  THROTTLE_RAMP,
+  WHEELIE_EASE_FULL,
+  WHEELIE_EASE_START,
+  WHEELIE_MIN_POWER,
 } from './constants';
 import { buildTerrain } from './terrain';
 import type { Coin, GameState, Input, Terrain } from './types';
@@ -32,7 +38,8 @@ export type GameEngine = {
   fuels: Coin[];
   bike: Bike;
   step: (input: Input, dtMs: number) => void;
-  getState: () => GameState;
+  getState: (alpha?: number) => GameState;
+  getCamera: (alpha?: number) => { x: number; y: number };
   setViewport: (w: number, h: number) => void;
   destroy: () => void;
 };
@@ -75,6 +82,7 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
   let finished = false;
   let reason: GameState['reason'] = null;
   let stalled = 0; // ms spent nearly stopped with no fuel
+  let throttle = 0; // smoothed gas level (0..1) — eased toward the input for smooth power delivery
   let viewW = 1280;
   let viewH = 720;
 
@@ -84,6 +92,30 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
   let wasAirborne = false;
   let totalFlips = 0;
   let flipBonus = 0;
+
+  // Render interpolation: the loop steps physics at a fixed dt but renders on every
+  // animation frame, so we lerp between the previous and current pose by `alpha`
+  // (= leftover accumulator / dt). Without this the bike stutters on any refresh that
+  // doesn't line up with the 60 Hz step. `prev` is refreshed at the TOP of each step
+  // (i.e. it holds the end-of-last-step pose) before Engine.update advances the world.
+  type Pose = {
+    cx: number; cy: number; ca: number;
+    wheels: { x: number; y: number }[];
+    hx: number; hy: number;
+    camx: number; camy: number;
+  };
+  const capturePose = (): Pose => ({
+    cx: bike.chassis.position.x,
+    cy: bike.chassis.position.y,
+    ca: bike.chassis.angle,
+    wheels: bike.wheels.map((w) => ({ x: w.position.x, y: w.position.y })),
+    hx: bike.head.position.x,
+    hy: bike.head.position.y,
+    camx: camera.x,
+    camy: camera.y,
+  });
+  let prev = capturePose();
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
   // Collision tracking: which wheels touch terrain (airborne = none), and head hit.
   const wheelSet = new Set<Body>(bike.wheels);
@@ -118,15 +150,51 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     if (over) return;
     const dtSec = dtMs / 1000;
 
-    // RWD: gas powers only the rear wheel; brake applies to both.
-    // Smooth accel: driveWheels is rate-limited at WHEEL_TORQUE rad/sec.
-    if (input.gas && fuel > 0) {
-      driveWheels(bike.wheels, 1, WHEEL_TORQUE, MAX_WHEEL_SPEED, dtSec, true);
-      applyPitch(bike.chassis, -1, PITCH_TORQUE);
-      fuel = Math.max(0, fuel - FUEL_BURN_RATE * dtSec);
-    } else if (input.brake) {
-      driveWheels(bike.wheels, -1, BRAKE_TORQUE, MAX_WHEEL_SPEED, dtSec, false);
-      applyPitch(bike.chassis, 1, PITCH_TORQUE);
+    // Snapshot the end-of-last-step pose for render interpolation, before we advance.
+    prev = capturePose();
+
+    // Smoothly ease the throttle toward the gas input (0..1) so power delivery ramps
+    // in and out instead of snapping — the "smooth acceleration". Gas only counts
+    // while there's fuel. Uses the previous frame's contact set (touching) — a
+    // one-frame lag is imperceptible.
+    const airborne = touching.size === 0;
+    const wantGas = input.gas && fuel > 0;
+    const target = wantGas ? 1 : 0;
+    const dThrottle = THROTTLE_RAMP * dtSec;
+    throttle = target > throttle ? Math.min(target, throttle + dThrottle) : Math.max(target, throttle - dThrottle);
+
+    const slope = terrain.slopeAt(bike.chassis.position.x);
+
+    if (throttle > 0) {
+      // Genuine torque-based AWD: real torque on both wheels, solver does the rest.
+      // Keep driving the wheels even mid-hop so they keep spinning and bite on landing
+      // (choppy charts skip the bike airborne constantly). Anti-wheelie: when grounded,
+      // ease power as the nose climbs above the slope so the bike can't drive itself
+      // into a backflip (still physical — just less torque).
+      let factor = 1;
+      if (!airborne) {
+        let pitchErr = bike.chassis.angle - slope;
+        while (pitchErr > Math.PI) pitchErr -= 2 * Math.PI;
+        while (pitchErr < -Math.PI) pitchErr += 2 * Math.PI;
+        const ease = (pitchErr - WHEELIE_EASE_START) / (WHEELIE_EASE_FULL - WHEELIE_EASE_START);
+        factor = Math.max(WHEELIE_MIN_POWER, Math.min(1, 1 - ease));
+      }
+      applyEngineTorque(bike.wheels, throttle * factor);
+      if (airborne) applyAirPitch(bike.chassis, 1, PITCH_TORQUE); // nose up for back-flips
+    }
+    if (wantGas) fuel = Math.max(0, fuel - FUEL_BURN_RATE * throttle * dtSec);
+
+    if (input.brake) {
+      brakeReverse(bike.wheels, BRAKE_TORQUE, REVERSE_TORQUE);
+      if (airborne) applyAirPitch(bike.chassis, -1, PITCH_TORQUE); // nose down for front-flips
+    }
+
+    // Grounded balance assist: a SOFT, capped corrective torque toward the terrain
+    // slope. It keeps the bike tracking the ground on normal grades, but its authority
+    // is finite — over-gassing a steep wall overwhelms it and the bike can wheelie,
+    // loop, and crash. Not called in the air, where the player controls pitch for flips.
+    if (!airborne) {
+      balanceChassis(bike.chassis, slope, BALANCE_KP, BALANCE_KD, BALANCE_MAX_TORQUE);
     }
 
     Engine.update(matter, dtMs);
@@ -194,22 +262,27 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     camera.follow(cx, cy, bike.chassis.velocity.x, viewW, viewH, terrain.worldWidth, terrain.floorY);
   };
 
-  const getState = (): GameState => {
+  // `alpha` (0..1) interpolates between the previous and current pose for smooth
+  // rendering. Positions and chassis angle are lerped; wheel SPIN angle uses the
+  // current value (a fast spin would lerp the short way and look wrong).
+  const getState = (alpha = 1): GameState => {
     const score = Math.round(distance * DISTANCE_MULTIPLIER + coinsCollected * COIN_VALUE + flipBonus);
+    const cur = capturePose();
     return {
       bike: {
-        x: bike.chassis.position.x,
-        y: bike.chassis.position.y,
-        angle: bike.chassis.angle,
+        x: lerp(prev.cx, cur.cx, alpha),
+        y: lerp(prev.cy, cur.cy, alpha),
+        angle: lerp(prev.ca, cur.ca, alpha),
         speed: Math.hypot(bike.chassis.velocity.x, bike.chassis.velocity.y),
         airborne: touching.size === 0,
-        wheels: bike.wheels.map((w) => ({
-          x: w.position.x,
-          y: w.position.y,
+        rearSpin: bike.wheels[0].angularVelocity,
+        wheels: bike.wheels.map((w, i) => ({
+          x: lerp(prev.wheels[i].x, cur.wheels[i].x, alpha),
+          y: lerp(prev.wheels[i].y, cur.wheels[i].y, alpha),
           angle: w.angle,
         })),
-        headX: bike.head.position.x,
-        headY: bike.head.position.y,
+        headX: lerp(prev.hx, cur.hx, alpha),
+        headY: lerp(prev.hy, cur.hy, alpha),
       },
       distance: Math.max(0, distance),
       fuel,
@@ -231,6 +304,10 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     bike,
     step,
     getState,
+    getCamera: (alpha = 1) => ({
+      x: lerp(prev.camx, camera.x, alpha),
+      y: lerp(prev.camy, camera.y, alpha),
+    }),
     setViewport(w, h) {
       viewW = w;
       viewH = h;

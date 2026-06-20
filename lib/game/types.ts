@@ -13,6 +13,8 @@ export type Terrain = {
   floorY: number; // y of the solid floor (bottom of every quad)
   // Maps a world x to the underlying price, for the HUD altitude readout.
   priceAt: (x: number) => number;
+  // Maps a world x to the surface slope angle (rad), for pitch stabilization.
+  slopeAt: (x: number) => number;
   minPrice: number;
   maxPrice: number;
 };
@@ -27,6 +29,7 @@ export type GameState = {
     angle: number;
     speed: number; // px/step magnitude of chassis velocity
     airborne: boolean;
+    rearSpin: number; // rear-wheel angular velocity (rad/step) — drives dust intensity / motion fx
     wheels: { x: number; y: number; angle: number }[];
     headX: number;
     headY: number;

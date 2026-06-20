@@ -2,32 +2,68 @@
 
 // --- Physics ---
 export const GRAVITY = 1.4; // Matter world gravity scale
-// Smooth accel: angular acceleration in rad/sec applied to wheel(s).
-// At 60fps: per-step delta = WHEEL_TORQUE / 60. Spin-up to MAX_WHEEL_SPEED
-// takes ~MAX_WHEEL_SPEED / (WHEEL_TORQUE/60) ≈ 10 frames = 0.17 s.
-export const WHEEL_TORQUE = 18; // rad/sec spin-up rate — snappy throttle (~6 frames) without popping a backflip
-export const MAX_WHEEL_SPEED = 1.5; // clamp on wheel angular velocity (rad/step) — more climb power + top speed
-export const BRAKE_TORQUE = 22; // rad/sec — braking is sharper than acceleration
+//
+// DRIVE — genuine TORQUE-based all-wheel drive (no kinematic velocity overrides).
+// Real motor torque is applied to BOTH wheels; the Matter solver turns it into
+// forward motion through contact friction, so acceleration is load-dependent (it
+// bogs on climbs, the tyre can slip), the chassis gets a real pitch reaction
+// (wheelies are possible), and the bike CAN tip over and crash. Nothing here forces
+// a wheel spin or a chassis angle.
+// Magnitude note: Matter integrates torque as Δangle += (torque/inertia)·dt², and at
+// 60fps dt²≈278, so raw coefficients are tiny. applyEngineTorque scales by the
+// wheel's own inertia (against WHEEL_INERTIA_REF) so the FEEL is independent of wheel
+// mass — this is just a units convention, not a kinematic drive.
+export const MOTOR_TORQUE = 0.2; // rear-wheel drive torque at full throttle (real torque, inertia-scaled)
+export const FRONT_DRIVE_RATIO = 0.12; // front wheel gets 12% of rear power → traction so it never stalls in dips / over crests
+export const MAX_WHEEL_SPIN = 11; // rad/step where drive torque tapers to 0 → natural top speed
+export const WHEEL_INERTIA_REF = 300; // reference wheel inertia applyEngineTorque scales against (mass/frame-independent torque)
+export const THROTTLE_RAMP = 3.5; // throttle units/sec the smoothed throttle eases up & down → smooth power delivery
+export const BRAKE_TORQUE = 0.0016; // brake torque magnitude (firm pull toward a stop on both wheels)
+export const REVERSE_TORQUE = 0.0005; // steady reverse drive once stopped under brake
+// Wheel↔terrain grip. Matter pair friction = min(wheel, terrain), and a slope of
+// angle θ needs μ > tan(θ) for the driven tyre to climb (not just cling). The chart's
+// steepest faces approach ~49°, tan49≈1.15, so keep BOTH ≥ ~1.5 to climb with margin.
+// AWD: both wheels are driven AND grip.
+export const WHEEL_FRICTION = 1.6;
+export const WHEEL_FRICTION_STATIC = 1.8; // high static grip so the tyre bites from a standstill on a wall
+export const TERRAIN_FRICTION = 1.6;
 export const SUSPENSION_STIFFNESS = 0.9; // firmer axle; reduces horizontal wobble
 // Pitch torque applied to the chassis on input — this is what makes wheelies and
 // flips possible (gas pitches the nose up, brake pitches it down). Over-rotating
 // in the air lands you on the rider's head = crash. Tuned to chassis inertia.
-export const PITCH_TORQUE = 0.07; // lower so gas doesn't auto-wheelie into a backflip on grippy launches
+export const PITCH_TORQUE = 0.1; // air-only pitch control authority (flips / leveling for landing)
+export const PITCH_INERTIA_REF = 10000; // reference inertia the pitch/balance torques scale against (frame-rate-independent)
+// Grounded anti-tumble — a SOFT, OVERPOWERABLE balance assist (rider weight shift),
+// NOT a kinematic slope-lock. balanceChassis() adds a CAPPED PD torque toward the
+// terrain slope: it settles the bike on normal/moderate grades, but flooring the
+// throttle on a steep wall overwhelms it → real wheelie → backflip → crash. This is
+// what re-enables game-over on the ground. See balanceChassis() in bike.ts.
+export const BALANCE_KP = 2.6; // proportional gain toward terrain slope
+export const BALANCE_KD = 2.4; // strong derivative gain — actively damps fast spin so incipient loops are caught (rider resisting a flip)
+export const BALANCE_MAX_TORQUE = 1.4; // hard cap on the assist → finite authority, can still be overpowered into a flip
+// Anti-wheelie power easing: when the nose pitches above the terrain slope under power,
+// drive torque is eased down so the bike can't drive itself into a backflip on a climb.
+// Pure physics (just less torque — gravity/momentum/air can still flip & crash you), and
+// it mirrors how a rider/throttle backs off a wheelie. Eases between these pitch errors.
+export const WHEELIE_EASE_START = 0.6; // rad of nose-up-vs-slope where power begins to ease (~34°) — past normal climbing pitch
+export const WHEELIE_EASE_FULL = 1.2; // rad where power reaches its floor (~69°)
+export const WHEELIE_MIN_POWER = 0.4; // throttle floor retained at full wheelie (still real grunt to keep climbing)
 
 // --- Stunt scoring ---
 export const FLIP_BONUS = 300; // portfolio bonus per full mid-air flip
 
 // --- Terrain ---
-export const SEGMENT_W = 60; // px between adjacent price points (world x)
+export const SEGMENT_W = 70; // px between adjacent price points (world x) — wider = gentler grades
 // Vertical scale: px of rise per unit log-return. A day's % move maps to a
 // FIXED steepness regardless of the asset's absolute price or total range, so a
 // +5% day is always a real hill (no global min/max squashing). Tune feel here.
-export const PX_PER_RETURN = 1800; // px per 1.0 log-return (~+5% day ≈ 88px rise)
-export const MAX_STEP_RETURN = 0.12; // clamp |per-day log-return| so gaps/bad ticks can't make vertical walls
+export const PX_PER_RETURN = 1200; // px per 1.0 log-return. Drama comes from multi-day trends (cumulative, unclamped), not single-day walls
+export const MAX_STEP_RETURN = 0.045; // clamp |per-day log-return| → caps a single grade to ~atan(1200·0.045/70)=37.6°
 export const TERRAIN_TOP = 120; // px padding above the highest point of the climb
 export const FLOOR_OFFSET = 400; // depth of solid ground below the lowest surface point
 export const RUNWAY_SEGMENTS = 4; // flat segments before the first data point
-export const RESAMPLE_SUB = 3; // Catmull-Rom sub-points per segment (1 = none) — ramps sharp days so they stay drivable
+export const RESAMPLE_SUB = 5; // Catmull-Rom sub-points per segment — smoother ramps: climbable + fewer micro-air skips (less choppy)
+export const TERRAIN_SMOOTH = 0.1; // ≤0.1 low-pass blend over data y's — trims the sharpest overshoot spikes only; chart shape preserved
 
 // --- Bike ---
 export const CHASSIS_W = 70;
@@ -36,7 +72,7 @@ export const WHEEL_R = 20;
 export const WHEEL_BASE = 46; // half-distance between wheels from chassis center
 export const WHEEL_DROP = 16; // wheels sit this far below chassis center (exported for renderer)
 export const HEAD_R = 10;
-export const HEAD_OFFSET_Y = 34; // rider head height above chassis center (raises CG)
+export const HEAD_OFFSET_Y = 18; // rider head height above chassis center (raises CG) — lowered to resist backward looping under power
 
 // --- Fuel / scoring ---
 export const FUEL_MAX = 100;
