@@ -10,6 +10,7 @@
     "gen:data": "tsx scripts/fetch-real-data.mts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "lucide-react": "^1.18.0",
     "matter-js": "^0.20.0",
     "next": "16.2.9",

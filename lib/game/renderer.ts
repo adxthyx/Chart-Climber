@@ -4,6 +4,7 @@ import {
   WHEEL_DROP,
   WHEEL_R,
 } from './constants';
+import { withBasePath } from '@/lib/basePath';
 import type { GameEngine } from './engine';
 import type { GameState } from './types';
 
@@ -27,7 +28,7 @@ export function draw(
   const cam = engine.getCamera(alpha);
 
   drawSky(ctx, w, h);
-  drawParallax(ctx, w, h, cam.x, view.symbol);
+  drawBackdrop(ctx, w, h, cam.x, cam.y, view.symbol);
 
   ctx.save();
   ctx.translate(-cam.x, -cam.y);
@@ -120,13 +121,86 @@ function updateAndDrawDust(ctx: CanvasRenderingContext2D, state: GameState) {
 function drawSky(ctx: CanvasRenderingContext2D, w: number, h: number) {
   const g = ctx.createLinearGradient(0, 0, 0, h);
   g.addColorStop(0, COLORS.skyTop);
+  g.addColorStop(0.55, COLORS.skyMid);
   g.addColorStop(1, COLORS.skyBottom);
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, w, h);
 }
 
-// Faint trading-terminal grid + big ticker watermark, slow-parallaxed.
-function drawParallax(ctx: CanvasRenderingContext2D, w: number, h: number, camX: number, symbol: string) {
+// Deterministic 0..1 hash — keeps every background element stable per index with no
+// stored state (the backdrop is redrawn from scratch each frame).
+function hash01(i: number, salt: number): number {
+  const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+// "After-hours trading floor" backdrop, drawn in screen space with layered parallax:
+// starfield + moon up top, a glowing horizon, and two depths of candlestick-chart
+// skyline (the world IS a chart, so the distance is made of charts too). The skyline
+// sinks slightly as the bike climbs (camY parallax) to sell altitude.
+function drawBackdrop(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  camX: number,
+  camY: number,
+  symbol: string,
+) {
+  const t = performance.now() / 1000;
+  // Horizon drifts down as the camera rises (camY shrinks when climbing).
+  const horizon = Math.max(h * 0.55, Math.min(h * 0.94, h * 0.8 + camY * 0.05));
+
+  // Starfield — barely parallaxed, twinkling, kept above the horizon band.
+  ctx.save();
+  for (let i = 0; i < 90; i++) {
+    const sx = (hash01(i, 1) * 4096 - camX * 0.04) % w;
+    const x = sx < 0 ? sx + w : sx;
+    const y = hash01(i, 2) * horizon * 0.85;
+    const tw = 0.35 + 0.65 * Math.abs(Math.sin(t * (0.4 + hash01(i, 3)) + i));
+    const r = 0.5 + hash01(i, 4) * 1.1;
+    ctx.globalAlpha = tw * 0.7;
+    ctx.fillStyle = COLORS.star;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Moon with a soft glow, fixed in screen space.
+  const mx = w * 0.84;
+  const my = h * 0.16;
+  const glow = ctx.createRadialGradient(mx, my, 6, mx, my, 90);
+  glow.addColorStop(0, 'rgba(226,232,240,0.28)');
+  glow.addColorStop(1, 'rgba(226,232,240,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(mx - 90, my - 90, 180, 180);
+  ctx.beginPath();
+  ctx.arc(mx, my, 17, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.moon;
+  ctx.fill();
+  // Crescent shadow.
+  ctx.beginPath();
+  ctx.arc(mx - 7, my - 4, 15, 0, Math.PI * 2);
+  ctx.fillStyle = COLORS.skyMid;
+  ctx.fill();
+
+  // Horizon glow band under the skyline.
+  const hg = ctx.createLinearGradient(0, horizon - h * 0.22, 0, horizon);
+  hg.addColorStop(0, 'rgba(56,189,248,0)');
+  hg.addColorStop(1, COLORS.horizonGlow);
+  ctx.fillStyle = hg;
+  ctx.fillRect(0, horizon - h * 0.22, w, h * 0.22);
+
+  // Candlestick skylines: far (faint, short) then near (stronger, taller).
+  drawCandleSkyline(ctx, w, camX, 0.1, horizon, h * 0.2, 34, 7, COLORS.bgCandleUpFar, COLORS.bgCandleDownFar);
+  drawCandleSkyline(ctx, w, camX, 0.24, horizon, h * 0.34, 46, 17, COLORS.bgCandleUpNear, COLORS.bgCandleDownNear);
+
+  // Fill below the horizon so skyline bases don't float.
+  ctx.fillStyle = 'rgba(8,14,26,0.55)';
+  ctx.fillRect(0, horizon, w, h - horizon);
+
+  // Faint trading-terminal grid + big ticker watermark, slow-parallaxed (kept from
+  // the original backdrop — it reads as the exchange's wall display).
   ctx.save();
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = 1;
@@ -153,6 +227,46 @@ function drawParallax(ctx: CanvasRenderingContext2D, w: number, h: number, camX:
   ctx.fillStyle = 'rgba(251,191,36,0.18)';
   ctx.fillText('ILLUSTRATIVE', driftX, h * 0.32 + 92);
   ctx.restore();
+}
+
+// One infinite scrolling row of candlestick silhouettes rising from `baseY`.
+// Candle geometry is hashed from its world index so the row is stable as it scrolls.
+function drawCandleSkyline(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  camX: number,
+  speed: number,
+  baseY: number,
+  maxH: number,
+  candleW: number,
+  gap: number,
+  upColor: string,
+  downColor: string,
+) {
+  const span = candleW + gap;
+  const px = camX * speed;
+  const first = Math.floor(px / span);
+  const count = Math.ceil(w / span) + 2;
+  const salt = speed * 100; // distinct sequence per layer
+
+  for (let k = 0; k <= count; k++) {
+    const i = first + k;
+    const x = i * span - px;
+    const bodyH = maxH * (0.22 + 0.78 * hash01(i, salt));
+    const up = hash01(i, salt + 1) > 0.45;
+    const wickTop = bodyH + maxH * 0.18 * hash01(i, salt + 2);
+    const cx = x + candleW / 2;
+
+    ctx.strokeStyle = COLORS.bgWick;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, baseY - wickTop);
+    ctx.lineTo(cx, baseY);
+    ctx.stroke();
+
+    ctx.fillStyle = up ? upColor : downColor;
+    ctx.fillRect(x, baseY - bodyH, candleW, bodyH);
+  }
 }
 
 function drawTerrain(
@@ -298,7 +412,7 @@ function ensureBikeImg() {
   if (bikeImg || typeof window === 'undefined' || typeof Image === 'undefined') return;
   bikeImg = new Image();
   bikeImg.onload = () => { bikeReady = true; };
-  bikeImg.src = '/bike.svg';
+  bikeImg.src = withBasePath('/bike.svg');
 }
 
 function drawBike(ctx: CanvasRenderingContext2D, state: GameState, view: RenderView) {
@@ -360,7 +474,7 @@ function drawWheels(ctx: CanvasRenderingContext2D, b: GameState['bike']) {
     ctx.stroke();
     ctx.beginPath();
     ctx.arc(0, 0, 4, 0, Math.PI * 2);
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = '#4ade80'; // neon hub to match the rim/fairing trim
     ctx.fill();
     // Spokes
     ctx.strokeStyle = 'rgba(148,163,184,0.6)';

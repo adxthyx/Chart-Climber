@@ -6,18 +6,11 @@ import {
   CAT_WHEEL,
   CHASSIS_H,
   CHASSIS_W,
-  FRONT_DRIVE_RATIO,
   HEAD_OFFSET_Y,
   HEAD_R,
-  MAX_WHEEL_SPIN,
-  MOTOR_TORQUE,
-  PITCH_INERTIA_REF,
   SUSPENSION_STIFFNESS,
   WHEEL_BASE,
   WHEEL_DROP,
-  WHEEL_FRICTION,
-  WHEEL_FRICTION_STATIC,
-  WHEEL_INERTIA_REF,
   WHEEL_R,
 } from './constants';
 
@@ -44,9 +37,9 @@ export function buildBike(startX: number, startY: number): Bike {
 
   const wheelOpts = {
     density: 0.0012,
-    friction: WHEEL_FRICTION, // high grip so the rear bites on climbs / front doesn't wash out
-    frictionStatic: WHEEL_FRICTION_STATIC,
-    restitution: 0.02, // minimal bounce so wheels track bumps instead of skipping
+    friction: 0.95,
+    frictionStatic: 1.2,
+    restitution: 0.08,
     collisionFilter: { group: BIKE_GROUP, category: CAT_WHEEL, mask: CAT_TERRAIN },
   } as const;
 
@@ -101,79 +94,37 @@ export function buildBike(startX: number, startY: number): Bike {
 // Marker so the engine can identify terrain category in collision pairs.
 export const TERRAIN_CATEGORY = CAT_TERRAIN;
 
-// Wrap an angle error into [-π, π] so PD controllers take the short way round.
-function wrapAngle(a: number): number {
-  while (a > Math.PI) a -= 2 * Math.PI;
-  while (a < -Math.PI) a += 2 * Math.PI;
-  return a;
+// Rate-limited single-wheel drive. Eases the wheel's angular velocity toward
+// `targetVel` by at most `accel * dtSec` rad this step. Sets velocity DIRECTLY
+// (kinematic) so the drive exerts NO reaction torque on the chassis — the bike spins
+// up smoothly and never rears / wheelies / hops from throttle.
+export function driveWheel(wheel: Body, targetVel: number, accel: number, dtSec: number): void {
+  const delta = accel * dtSec;
+  const diff = targetVel - wheel.angularVelocity;
+  const next =
+    Math.abs(diff) <= delta ? targetVel : wheel.angularVelocity + Math.sign(diff) * delta;
+  Matter.Body.setAngularVelocity(wheel, next);
 }
 
-// ENGINE DRIVE — genuine TORQUE-based all-wheel drive. Real torque is added to each
-// wheel (NOT a velocity override); the Matter solver converts it to forward motion
-// through contact friction, so acceleration is load-dependent (bogs on climbs, the
-// tyre can slip) and the chassis gets a real pitch reaction. `throttle` (0..1) is the
-// smoothed gas level. The rear wheel gets full MOTOR_TORQUE; the front wheel gets
-// FRONT_DRIVE_RATIO of it (AWD) so it keeps biting when the rear unloads over a crest
-// or in a dip — that's what stops the bike getting stuck on steep ups/downs. Each
-// wheel's torque tapers toward zero as its spin nears MAX_WHEEL_SPIN, giving a natural
-// top speed instead of accelerating forever.
-export function applyEngineTorque(wheels: [Body, Body], throttle: number): void {
-  if (throttle <= 0) return;
-  applyWheelTorque(wheels[0], MOTOR_TORQUE * throttle); // rear (drive)
-  applyWheelTorque(wheels[1], MOTOR_TORQUE * throttle * FRONT_DRIVE_RATIO); // front (traction)
-}
-
-function applyWheelTorque(wheel: Body, torque: number): void {
-  // Taper to a top speed: full torque at rest, fading to 0 as spin → MAX_WHEEL_SPIN.
-  const taper = Math.max(0, 1 - wheel.angularVelocity / MAX_WHEEL_SPIN);
-  if (taper <= 0) return;
-  // Scale by the wheel's own inertia (vs a reference) so the feel is independent of
-  // wheel mass/radius — a units convention, the drive itself is pure dynamics.
-  wheel.torque += torque * taper * (wheel.inertia / WHEEL_INERTIA_REF);
-}
-
-// BRAKING / REVERSE via torque (never a velocity override). Applies an opposing torque
-// to both wheels proportional to current spin — a firm friction brake that pulls them
-// to a stop — then a small steady reverse torque once nearly stopped so the bike backs
-// up slowly instead of snapping into reverse.
-export function brakeReverse(
+// Rate-limited drive. `accel` is in rad/sec. RWD by default: gas powers the rear wheel
+// (index 0); braking (rearOnly=false) applies to both.
+export function driveWheels(
   wheels: [Body, Body],
-  brakeTorque: number,
-  reverseTorque: number,
+  dir: number,
+  accel: number,
+  maxSpeed: number,
+  dtSec: number,
+  rearOnly = false,
 ): void {
-  for (const w of wheels) {
-    if (Math.abs(w.angularVelocity) > 0.05) {
-      const mag = Math.min(brakeTorque, brakeTorque * Math.abs(w.angularVelocity));
-      w.torque += -Math.sign(w.angularVelocity) * mag * w.inertia;
-    } else {
-      w.torque += -reverseTorque * w.inertia;
-    }
-  }
+  const targetVel = dir > 0 ? maxSpeed : -maxSpeed;
+  driveWheel(wheels[0], targetVel, accel, dtSec);
+  if (!rearOnly) driveWheel(wheels[1], targetVel, accel, dtSec);
 }
 
-// GROUNDED BALANCE ASSIST — a SOFT, OVERPOWERABLE anti-tumble (rider weight shift),
-// NOT a kinematic slope-lock. A PD controller adds a CAPPED corrective torque toward
-// the terrain slope: it settles the bike on normal/moderate grades, but its authority
-// is finite (clamped to ±maxTorque), so flooring the throttle on a steep wall produces
-// more drive-reaction torque than the assist can cancel → the bike wheelies, can loop,
-// and can crash on its head. Only called while grounded; in the air the player keeps
-// full pitch control for flips. Scaled by chassis inertia so it's frame-rate independent.
-export function balanceChassis(
-  chassis: Body,
-  targetAngle: number,
-  kp: number,
-  kd: number,
-  maxTorque: number,
-): void {
-  const err = wrapAngle(targetAngle - chassis.angle);
-  const raw = (kp * err - kd * chassis.angularVelocity) * (chassis.inertia / PITCH_INERTIA_REF);
-  const t = Math.max(-maxTorque, Math.min(maxTorque, raw));
-  chassis.torque += t;
-}
-
-// AIR PITCH CONTROL. gas (+1) rotates the nose up for wheelies/back-flips, brake (-1)
-// noses down for front-flips. Air-gated by the caller. Scaled by chassis inertia so
-// it's frame-rate independent. torque is consumed/zeroed by Engine.update each step.
-export function applyAirPitch(chassis: Body, dir: number, amount: number): void {
-  chassis.torque += dir * amount * (chassis.inertia / PITCH_INERTIA_REF);
+// Pitch the chassis: gas (+1) rotates the nose up for wheelies/back-flips, brake
+// (-1) noses down for front-flips. Scaled by chassis inertia so it's frame-rate
+// independent. This is the control players use to keep level — or over-rotate
+// and crash. torque is consumed and zeroed by Engine.update each step.
+export function applyPitch(chassis: Body, dir: number, amount: number): void {
+  chassis.torque += dir * amount * (chassis.inertia / 10000);
 }

@@ -1,12 +1,14 @@
-// Fetches REAL daily price history from Yahoo Finance (no API key) and bakes it
-// into lib/data/static/*.json + registry.ts. Run with: npm run gen:real
-// This is the only data source — terrain always reflects actual market moves.
+// Fetches REAL price history from Yahoo Finance (no API key) and bakes it
+// into lib/data/static/*.json + registry.ts. Run with: npm run gen:data
+// Candle granularity is per range (intraday for short ranges — see RANGE_INTERVAL)
+// so every timeframe builds a full-length terrain. This is the only data source —
+// terrain always reflects actual market moves.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { ASSETS, metaOf } from '../lib/data/assets.ts';
-import { RANGE_POINTS, RANGES, type ChartSeries, type PricePoint, type Range } from '../lib/data/types.ts';
+import { RANGE_INTERVAL, RANGE_POINTS, RANGES, type ChartSeries, type PricePoint, type Range } from '../lib/data/types.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const staticDir = join(here, '..', 'lib', 'data', 'static');
@@ -24,7 +26,7 @@ function yahooSymbol(symbol: string, cls: string): string {
   return symbol;
 }
 
-// Evenly downsample to the target daily point count for a range.
+// Evenly downsample to the target terrain point count for a range.
 function downsample(points: PricePoint[], range: Range): PricePoint[] {
   const target = RANGE_POINTS[range];
   if (points.length <= target) return points;
@@ -47,7 +49,7 @@ type YahooResp = {
 async function fetchSeries(yhSymbol: string, range: Range): Promise<PricePoint[]> {
   const url =
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yhSymbol)}` +
-    `?range=${YRANGE[range]}&interval=1d`;
+    `?range=${YRANGE[range]}&interval=${RANGE_INTERVAL[range]}`;
   const res = await fetch(url, { headers: { 'User-Agent': UA, accept: 'application/json' } });
   if (!res.ok) throw new Error(`yahoo ${yhSymbol} ${range}: HTTP ${res.status}`);
   const json = (await res.json()) as YahooResp;

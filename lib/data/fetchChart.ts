@@ -1,3 +1,4 @@
+import { withBasePath } from '@/lib/basePath';
 import { STATIC_SERIES } from './static/registry';
 import type { ChartSeries, Range } from './types';
 
@@ -15,7 +16,7 @@ export function staticChart(symbol: string, range: Range): ChartSeries {
 // Always resolves to a usable ChartSeries.
 export async function getChart(symbol: string, range: Range): Promise<ChartSeries> {
   try {
-    const res = await fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}&range=${range}`, {
+    const res = await fetch(withBasePath(`/api/chart?symbol=${encodeURIComponent(symbol)}&range=${range}`), {
       cache: 'no-store',
     });
     if (res.ok) {

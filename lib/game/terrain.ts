@@ -207,6 +207,15 @@ export function buildTerrain(points: PricePoint[]): Terrain {
     return closes[i] + (closes[i + 1] - closes[i]) * frac;
   };
 
+  // World-x -> trading-day timestamp (ms epoch) of the nearest data point, for the
+  // HUD date readout. Runway/tail clamp to the first/last day.
+  const dateAt = (x: number): number => {
+    if (x <= dataStart) return points[0].t;
+    if (x >= dataEnd) return points[n - 1].t;
+    const i = Math.round((x - dataStart) / SEGMENT_W);
+    return points[i].t;
+  };
+
   return {
     bodies,
     surface,
@@ -216,6 +225,7 @@ export function buildTerrain(points: PricePoint[]): Terrain {
     worldWidth,
     floorY,
     priceAt,
+    dateAt,
     slopeAt,
     minPrice,
     maxPrice,

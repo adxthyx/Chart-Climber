@@ -18,18 +18,20 @@ function run(key: string, points: PricePoint[]) {
   const worldWidth = engine.terrain.worldWidth;
   const input = { gas: true, brake: false };
 
-  // Simple "competent player" driver: gas on the ground, but ease off when airborne
-  // or when pitched too far back (about to loop) so we test whether the PHYSICS allow
-  // a clean run — not the unrealistic "gas pinned through every jump = backflip" case.
+  // Simple "competent player" driver: feathers the throttle instead of pinning it.
+  // SIGN CONVENTION (canvas y-down): nose-up/wheelie = NEGATIVE chassis angle. The
+  // wheelie-buildup mechanic makes a pinned throttle loop out backward, so a fair
+  // proxy of a decent player must guard BOTH directions: release gas as the nose
+  // rises, brake to slam it back down (which also drains the buildup), and gas to
+  // lift a dropping nose mid-air.
   const CRUISE = 11; // px/step — a sane player doesn't pin the throttle down a volatile descent
   const drive = (angle: number, slope: number, airborne: boolean, speed: number) => {
-    // Gate on PITCH (about-to-loop), not on mere airborne — small bumps must not kill
-    // momentum on choppy terrain. Reference to the slope when grounded, to level (0)
-    // when airborne so we tuck for landing.
+    // Reference to the slope when grounded, to level (0) when airborne (tuck for landing).
     const ref = airborne ? 0 : slope;
-    const pitchErr = angle - ref; // + = nosed back
-    if (pitchErr > 0.85) { input.gas = false; input.brake = true; return; } // looping back → settle/tuck
-    if (pitchErr > 0.55) { input.gas = false; input.brake = false; return; } // ease off
+    const pitchErr = angle - ref; // negative = nose up (wheelie), positive = nose down
+    if (pitchErr < -0.9) { input.gas = false; input.brake = true; return; } // wheelie past recovery → brake it down
+    if (pitchErr < -0.5) { input.gas = false; input.brake = false; return; } // nose rising → ease off, drain buildup
+    if (airborne && pitchErr > 0.6) { input.gas = true; input.brake = false; return; } // nose diving mid-air → gas lifts it
     if (speed > CRUISE) { input.gas = false; input.brake = false; return; } // coast at cruise speed
     input.gas = true; input.brake = false;
   };

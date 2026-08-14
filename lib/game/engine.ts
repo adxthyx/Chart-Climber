@@ -1,11 +1,8 @@
 import Matter, { type Body } from 'matter-js';
 import type { PricePoint } from '@/lib/data/types';
-import { applyAirPitch, applyEngineTorque, balanceChassis, brakeReverse, buildBike, type Bike } from './bike';
+import { applyPitch, buildBike, driveWheels, type Bike } from './bike';
 import { createCamera, type Camera } from './camera';
 import {
-  BALANCE_KD,
-  BALANCE_KP,
-  BALANCE_MAX_TORQUE,
   BRAKE_TORQUE,
   CAT_TERRAIN,
   COIN_VALUE,
@@ -15,14 +12,16 @@ import {
   FUEL_MAX,
   FUEL_REFILL,
   GRAVITY,
+  MAX_WHEEL_SPEED,
   PITCH_TORQUE,
-  REVERSE_TORQUE,
+  PX_PER_METER,
   RUNWAY_SEGMENTS,
   SEGMENT_W,
-  THROTTLE_RAMP,
-  WHEELIE_EASE_FULL,
-  WHEELIE_EASE_START,
-  WHEELIE_MIN_POWER,
+  WHEEL_TORQUE,
+  WHEELIE_BUILD_S,
+  WHEELIE_DECAY_S,
+  WHEELIE_MAX_LIFT,
+  WHEELIE_MIN_LIFT,
 } from './constants';
 import { buildTerrain } from './terrain';
 import type { Coin, GameState, Input, Terrain } from './types';
@@ -82,7 +81,7 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
   let finished = false;
   let reason: GameState['reason'] = null;
   let stalled = 0; // ms spent nearly stopped with no fuel
-  let throttle = 0; // smoothed gas level (0..1) — eased toward the input for smooth power delivery
+  let wheelieHold = 0; // 0..1 sustained-gas buildup driving the wheelie lift multiplier
   let viewW = 1280;
   let viewH = 720;
 
@@ -117,9 +116,7 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
   let prev = capturePose();
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
-  // Collision tracking: which wheels touch terrain (airborne = none), and head hit.
-  const wheelSet = new Set<Body>(bike.wheels);
-  const touching = new Set<Body>();
+  // Head-crash detection stays event-driven (a fresh contact is a clean trigger).
   let headHit = false;
 
   const isTerrain = (b: Body) => b.collisionFilter.category === CAT_TERRAIN;
@@ -130,19 +127,35 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
       if ((bodyA === bike.head && isTerrain(bodyB)) || (bodyB === bike.head && isTerrain(bodyA))) {
         headHit = true;
       }
-      if (wheelSet.has(bodyA) && isTerrain(bodyB)) touching.add(bodyA);
-      if (wheelSet.has(bodyB) && isTerrain(bodyA)) touching.add(bodyB);
-    }
-  };
-  const onEnd = (e: Matter.IEventCollision<Matter.Engine>) => {
-    for (const pair of e.pairs) {
-      const { bodyA, bodyB } = pair;
-      if (wheelSet.has(bodyA) && isTerrain(bodyB)) touching.delete(bodyA);
-      if (wheelSet.has(bodyB) && isTerrain(bodyA)) touching.delete(bodyB);
     }
   };
   Events.on(matter, 'collisionStart', onStart);
-  Events.on(matter, 'collisionEnd', onEnd);
+
+  // Grounded detection — AUTHORITATIVE per-step scan of the solver's live contact
+  // pairs, NOT collisionStart/End bookkeeping. The terrain is hundreds of separate
+  // static quads; a resting wheel straddles a seam and Matter fires collisionEnd
+  // without a matching collisionStart, so an event-set "touching" goes stale and the
+  // bike reads airborne while planted (→ constant nose-up air-pitch → the rear hops
+  // like a monkey). Reading engine.pairs.list each step is the ground truth: a wheel
+  // is grounded iff it has an ACTIVE contact pair with a terrain body right now.
+  type WithPairs = Matter.Engine & { pairs: { list: Matter.Pair[] } };
+  const pairList = () => (matter as WithPairs).pairs.list;
+  const isWheelGrounded = (wheel: Body): boolean => {
+    for (const p of pairList()) {
+      if (!p.isActive) continue;
+      const { bodyA, bodyB } = p;
+      if (bodyA === wheel && isTerrain(bodyB)) return true;
+      if (bodyB === wheel && isTerrain(bodyA)) return true;
+    }
+    return false;
+  };
+  const countGrounded = (): number => {
+    let g = 0;
+    for (const w of bike.wheels) if (isWheelGrounded(w)) g++;
+    return g;
+  };
+  // Cached each step so drive (top of step) and getState read a consistent value.
+  let groundedCount = 0;
 
   const finishX = terrain.worldWidth - SEGMENT_W * 2;
 
@@ -153,48 +166,33 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     // Snapshot the end-of-last-step pose for render interpolation, before we advance.
     prev = capturePose();
 
-    // Smoothly ease the throttle toward the gas input (0..1) so power delivery ramps
-    // in and out instead of snapping — the "smooth acceleration". Gas only counts
-    // while there's fuel. Uses the previous frame's contact set (touching) — a
-    // one-frame lag is imperceptible.
-    const airborne = touching.size === 0;
-    const wantGas = input.gas && fuel > 0;
-    const target = wantGas ? 1 : 0;
-    const dThrottle = THROTTLE_RAMP * dtSec;
-    throttle = target > throttle ? Math.min(target, throttle + dThrottle) : Math.max(target, throttle - dThrottle);
+    // Grounded count from the live contact pairs — used only for the airborne flag
+    // (flip scoring / dust fx). The drive itself is kinematic and doesn't depend on it.
+    groundedCount = countGrounded();
 
-    const slope = terrain.slopeAt(bike.chassis.position.x);
-
-    if (throttle > 0) {
-      // Genuine torque-based AWD: real torque on both wheels, solver does the rest.
-      // Keep driving the wheels even mid-hop so they keep spinning and bite on landing
-      // (choppy charts skip the bike airborne constantly). Anti-wheelie: when grounded,
-      // ease power as the nose climbs above the slope so the bike can't drive itself
-      // into a backflip (still physical — just less torque).
-      let factor = 1;
-      if (!airborne) {
-        let pitchErr = bike.chassis.angle - slope;
-        while (pitchErr > Math.PI) pitchErr -= 2 * Math.PI;
-        while (pitchErr < -Math.PI) pitchErr += 2 * Math.PI;
-        const ease = (pitchErr - WHEELIE_EASE_START) / (WHEELIE_EASE_FULL - WHEELIE_EASE_START);
-        factor = Math.max(WHEELIE_MIN_POWER, Math.min(1, 1 - ease));
+    // KINEMATIC drive (initial-commit model): gas spins BOTH wheels up to MAX_WHEEL_SPEED
+    // (AWD = max traction so it holds speed on climbs); brake spins both backward. Setting
+    // wheel velocity directly adds NO chassis reaction torque, so throttle never rears or
+    // hops the bike — applyPitch is the only chassis torque (lean / air control). Forward
+    // ramps at WHEEL_TORQUE ≥ BRAKE_TORQUE so acceleration is never slower than reverse.
+    //
+    // WHEELIE BUILDUP: holding gas ramps `wheelieHold` 0→1 over WHEELIE_BUILD_S, scaling
+    // the nose-up torque from MIN_LIFT to MAX_LIFT. A pinned throttle therefore lifts the
+    // nose past recovery and loops out (head crash) — the downside of never braking.
+    // Off-gas it drains in WHEELIE_DECAY_S, and brake noses down, so feathering gas and
+    // braking before landings is the skill that gets rewarded.
+    if (input.gas && fuel > 0) {
+      wheelieHold = Math.min(1, wheelieHold + dtSec / WHEELIE_BUILD_S);
+      const lift = WHEELIE_MIN_LIFT + (WHEELIE_MAX_LIFT - WHEELIE_MIN_LIFT) * wheelieHold;
+      driveWheels(bike.wheels, 1, WHEEL_TORQUE, MAX_WHEEL_SPEED, dtSec, false); // AWD
+      applyPitch(bike.chassis, -1, PITCH_TORQUE * lift);
+      fuel = Math.max(0, fuel - FUEL_BURN_RATE * dtSec);
+    } else {
+      wheelieHold = Math.max(0, wheelieHold - dtSec / WHEELIE_DECAY_S);
+      if (input.brake) {
+        driveWheels(bike.wheels, -1, BRAKE_TORQUE, MAX_WHEEL_SPEED, dtSec, false);
+        applyPitch(bike.chassis, 1, PITCH_TORQUE);
       }
-      applyEngineTorque(bike.wheels, throttle * factor);
-      if (airborne) applyAirPitch(bike.chassis, 1, PITCH_TORQUE); // nose up for back-flips
-    }
-    if (wantGas) fuel = Math.max(0, fuel - FUEL_BURN_RATE * throttle * dtSec);
-
-    if (input.brake) {
-      brakeReverse(bike.wheels, BRAKE_TORQUE, REVERSE_TORQUE);
-      if (airborne) applyAirPitch(bike.chassis, -1, PITCH_TORQUE); // nose down for front-flips
-    }
-
-    // Grounded balance assist: a SOFT, capped corrective torque toward the terrain
-    // slope. It keeps the bike tracking the ground on normal grades, but its authority
-    // is finite — over-gassing a steep wall overwhelms it and the bike can wheelie,
-    // loop, and crash. Not called in the air, where the player controls pitch for flips.
-    if (!airborne) {
-      balanceChassis(bike.chassis, slope, BALANCE_KP, BALANCE_KD, BALANCE_MAX_TORQUE);
     }
 
     Engine.update(matter, dtMs);
@@ -204,8 +202,10 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     const speed = Math.hypot(bike.chassis.velocity.x, bike.chassis.velocity.y);
     distance = Math.max(distance, cx - spawnX);
 
-    // Flip detection: accumulate chassis rotation while airborne.
-    const isAirborne = touching.size === 0;
+    // Flip detection: accumulate chassis rotation while airborne. Recompute from the
+    // contacts this step's Engine.update just produced for an accurate landing edge.
+    groundedCount = countGrounded();
+    const isAirborne = groundedCount === 0;
     const angleDelta = bike.chassis.angle - prevChassisAngle;
     prevChassisAngle = bike.chassis.angle;
     if (isAirborne) {
@@ -274,7 +274,7 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
         y: lerp(prev.cy, cur.cy, alpha),
         angle: lerp(prev.ca, cur.ca, alpha),
         speed: Math.hypot(bike.chassis.velocity.x, bike.chassis.velocity.y),
-        airborne: touching.size === 0,
+        airborne: groundedCount === 0,
         rearSpin: bike.wheels[0].angularVelocity,
         wheels: bike.wheels.map((w, i) => ({
           x: lerp(prev.wheels[i].x, cur.wheels[i].x, alpha),
@@ -284,11 +284,12 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
         headX: lerp(prev.hx, cur.hx, alpha),
         headY: lerp(prev.hy, cur.hy, alpha),
       },
-      distance: Math.max(0, distance),
+      distance: Math.max(0, distance) / PX_PER_METER,
       fuel,
       coinsCollected,
       score,
       price: terrain.priceAt(bike.chassis.position.x),
+      date: terrain.dateAt(bike.chassis.position.x),
       over,
       finished,
       reason,
@@ -314,7 +315,6 @@ export function createGameEngine(points: PricePoint[]): GameEngine {
     },
     destroy() {
       Events.off(matter, 'collisionStart', onStart);
-      Events.off(matter, 'collisionEnd', onEnd);
       Composite.clear(matter.world, false, true);
       Engine.clear(matter);
     },

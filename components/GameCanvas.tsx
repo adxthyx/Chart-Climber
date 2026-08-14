@@ -66,6 +66,7 @@ export function GameCanvas({
         useGameStore.getState().setHud({
           distance: state.distance,
           price: state.price,
+          date: state.date,
           speed: state.bike.speed,
           fuel: state.fuel,
           score: state.score,

@@ -4,8 +4,9 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 export type Phase = 'menu' | 'loading' | 'playing' | 'crashed';
 
 export type Hud = {
-  distance: number;
+  distance: number; // meters
   price: number;
+  date: number; // ms epoch of the trading day under the bike
   speed: number;
   fuel: number;
   score: number;
@@ -17,6 +18,7 @@ export type Hud = {
 const EMPTY_HUD: Hud = {
   distance: 0,
   price: 0,
+  date: 0,
   speed: 0,
   fuel: 0,
   score: 0,
@@ -31,8 +33,10 @@ type GameStore = {
   finished: boolean;
   reason: 'crash' | 'fuel' | 'fell' | null;
   best: Record<string, number>; // best score per symbol (persisted)
+  playerName: string; // leaderboard display name, '' = anonymous (persisted)
 
   setPhase: (p: Phase) => void;
+  setPlayerName: (name: string) => void;
   setHud: (h: Hud) => void;
   endRun: (
     symbol: string,
@@ -52,8 +56,10 @@ export const useGameStore = create<GameStore>()(
       finished: false,
       reason: null,
       best: {},
+      playerName: '',
 
       setPhase: (phase) => set({ phase }),
+      setPlayerName: (playerName) => set({ playerName }),
       setHud: (hud) => set({ hud }),
       endRun: (symbol, score, finished, reason) =>
         set((s) => ({
@@ -69,7 +75,7 @@ export const useGameStore = create<GameStore>()(
     {
       name: 'chart-climber',
       storage: createJSONStorage(() => localStorage),
-      partialize: (s) => ({ best: s.best }),
+      partialize: (s) => ({ best: s.best, playerName: s.playerName }),
     },
   ),
 );

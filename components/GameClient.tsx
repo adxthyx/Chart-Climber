@@ -55,9 +55,9 @@ export function GameClient({
 
       {series ? (
         <>
-          <HUD meta={meta} live={series.live} />
+          <HUD meta={meta} range={range} live={series.live} />
           <GameCanvas key={runId} points={series.points} meta={meta} />
-          <GameOverModal meta={meta} onRetry={onRetry} />
+          <GameOverModal meta={meta} range={range} onRetry={onRetry} />
           <ControlsHint />
         </>
       ) : (

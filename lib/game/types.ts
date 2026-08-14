@@ -13,6 +13,8 @@ export type Terrain = {
   floorY: number; // y of the solid floor (bottom of every quad)
   // Maps a world x to the underlying price, for the HUD altitude readout.
   priceAt: (x: number) => number;
+  // Maps a world x to the nearest trading day (ms epoch), for the HUD date readout.
+  dateAt: (x: number) => number;
   // Maps a world x to the surface slope angle (rad), for pitch stabilization.
   slopeAt: (x: number) => number;
   minPrice: number;
@@ -34,11 +36,12 @@ export type GameState = {
     headX: number;
     headY: number;
   };
-  distance: number; // max world-x reached, in px
+  distance: number; // max distance reached, in meters (world px / PX_PER_METER)
   fuel: number; // 0..FUEL_MAX
   coinsCollected: number;
   score: number;
   price: number; // price under the bike
+  date: number; // ms epoch of the trading day under the bike
   over: boolean;
   finished: boolean; // reached the end of the chart
   reason: 'crash' | 'fuel' | 'fell' | null;
