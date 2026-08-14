@@ -1,8 +1,9 @@
 'use client';
 
-import { Coins, Gauge, Plane, RotateCw, Ruler, Wallet, Zap } from 'lucide-react';
+import { Calendar, Coins, Gauge, Plane, RotateCw, Ruler, Wallet, Zap } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AssetMeta } from '@/lib/data/types';
+import { RANGE_INTRADAY, type AssetMeta, type Range } from '@/lib/data/types';
+import { fmtDate, fmtDistance } from '@/lib/format';
 import { FUEL_MAX } from '@/lib/game/constants';
 import { useGameStore } from '@/store/useGameStore';
 
@@ -25,7 +26,7 @@ function Stat({ icon: Icon, label, value }: { icon: LucideIcon; label: string; v
   );
 }
 
-export function HUD({ meta, live }: { meta: AssetMeta; live: boolean }) {
+export function HUD({ meta, range, live }: { meta: AssetMeta; range: Range; live: boolean }) {
   const hud = useGameStore((s) => s.hud);
   const fuelPct = Math.max(0, Math.min(100, (hud.fuel / FUEL_MAX) * 100));
 
@@ -45,7 +46,8 @@ export function HUD({ meta, live }: { meta: AssetMeta; live: boolean }) {
           </span>
         </div>
 
-        <Stat icon={Ruler} label="Distance" value={`${Math.round(hud.distance)} m`} />
+        <Stat icon={Ruler} label="Distance" value={fmtDistance(hud.distance)} />
+        <Stat icon={Calendar} label="Date" value={fmtDate(hud.date, RANGE_INTRADAY[range])} />
         <Stat icon={Gauge} label="Price" value={fmtPrice(hud.price, meta.currency)} />
         <Stat icon={Zap} label="Speed" value={hud.speed.toFixed(1)} />
         <Stat icon={Coins} label="Coins" value={`${hud.coins}`} />

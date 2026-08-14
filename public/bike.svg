@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 150" width="220" height="150">
+  <!--
+    "BULL RUN" cyber-dirtbike BODY for Chart-Climber. The two tyres are drawn by the
+    canvas renderer (drawWheels) at the axles, so this art leaves the wheel discs open
+    and only draws frame/fairings/rider that overlap them.
+    Contract (renderer.ts): viewBox 220x150, rear axle (50,110), front axle (170,110),
+    ticker number plate centred ~ (41,69). Faces RIGHT (front wheel = higher x).
+    Theme: carbon-dark angular fairings, bull-market neon green trim, candlestick
+    chart on the tank, trader-rider in a suit with a red tie flying behind.
+  -->
+  <defs>
+    <linearGradient id="carbon" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0b1220"/>
+    </linearGradient>
+    <linearGradient id="carbonLite" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#334155"/>
+      <stop offset="1" stop-color="#111a2e"/>
+    </linearGradient>
+    <linearGradient id="bull" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4ade80"/>
+      <stop offset="1" stop-color="#15803d"/>
+    </linearGradient>
+    <linearGradient id="suit" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <radialGradient id="headlight" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#d9f99d" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#d9f99d" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- ===== Underglow ===== -->
+  <ellipse cx="110" cy="116" rx="52" ry="10" fill="#22c55e" opacity="0.10"/>
+
+  <!-- ===== Drivetrain / frame (behind fairings) ===== -->
+  <!-- Rear swingarm: pivot (96,98) -> rear axle (50,110) -->
+  <path d="M96 98 L50 110" stroke="#0b1220" stroke-width="9" stroke-linecap="round"/>
+  <path d="M96 98 L50 110" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round" opacity="0.8"/>
+  <!-- Rear shock -->
+  <path d="M95 96 L85 64" stroke="#0f172a" stroke-width="6" stroke-linecap="round"/>
+  <path d="M95 96 L85 64" stroke="#4ade80" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Front forks: triple clamp (150,58) -> front axle (170,110), raked -->
+  <path d="M150 58 L170 110" stroke="#0b1220" stroke-width="9" stroke-linecap="round"/>
+  <path d="M146 58 L166 110" stroke="#475569" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M153 58 L173 110" stroke="#475569" stroke-width="3.2" stroke-linecap="round"/>
+  <!-- fork guards -->
+  <path d="M148 62 L156 84 L162 82 L153 60 Z" fill="url(#carbonLite)"/>
+
+  <!-- Main frame spars -->
+  <path d="M150 58 L112 60 L96 98 M112 60 L100 96" stroke="url(#carbonLite)" stroke-width="7"
+        fill="none" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Engine block (low centre) -->
+  <path d="M90 88 L88 106 q0 6 6 6 l26 0 q6 0 6 -6 l0 -10 q0 -8 -9 -8 Z"
+        fill="url(#carbon)" stroke="#334155" stroke-width="1.5"/>
+  <path d="M92 96 l28 0 M92 101 l28 0" stroke="#334155" stroke-width="1.6"/>
+  <circle cx="104" cy="104" r="5.5" fill="#0b1220" stroke="#4ade80" stroke-width="1.5"/>
+  <!-- Footpeg -->
+  <path d="M118 112 l11 2" stroke="#94a3b8" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Exhaust: header off the cylinder, swept BACK under the seat, glowing tip at the tail -->
+  <path d="M118 90 Q104 76 88 80 L66 84" fill="none" stroke="#1e293b" stroke-width="6" stroke-linecap="round"/>
+  <path d="M118 90 Q104 76 88 80 L66 84" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
+  <path d="M78 79 L62 81 L61 88 L77 87 Z" fill="url(#carbonLite)" stroke="#0b1220" stroke-width="1"/>
+  <circle cx="62" cy="84.5" r="3" fill="#4ade80" opacity="0.9"/>
+  <circle cx="62" cy="84.5" r="6" fill="#4ade80" opacity="0.25"/>
+
+  <!-- ===== Rear tail fairing (sharp, angular) ===== -->
+  <path d="M56 84 L74 66 L104 62 L108 70 L78 76 L62 90 Z" fill="url(#carbon)" stroke="#0b1220" stroke-width="1"/>
+  <path d="M56 84 L74 66 L104 62" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+  <!-- tail spike -->
+  <path d="M60 80 L42 86 L62 87 Z" fill="url(#bull)" opacity="0.9"/>
+
+  <!-- ===== Side number plate, mounted onto the tail (renderer prints ticker ~ (41,69)) ===== -->
+  <path d="M52 76 L64 80 L58 88 Z" fill="url(#carbonLite)"/><!-- mounting bracket to the tail -->
+  <path d="M29 63 L55 63 L57 84 L33 86 Z" fill="#020617" stroke="#4ade80" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- ===== Seat ===== -->
+  <path d="M64 68 L108 62 L106 71 L66 76 Z" fill="#0f172a" stroke="#1e293b" stroke-width="1.5"/>
+
+  <!-- ===== Fuel tank + shrouds, with a candlestick chart motif ===== -->
+  <path d="M104 70 L106 54 L128 48 L142 56 L140 68 L124 74 Z" fill="url(#carbon)" stroke="#0b1220" stroke-width="1"/>
+  <path d="M106 54 L128 48 L142 56" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+  <!-- candlesticks on the tank: two green up-candles, one red -->
+  <g stroke-width="1">
+    <path d="M113 64 l0 -9" stroke="#4ade80"/><rect x="111.4" y="58" width="3.2" height="4" fill="#4ade80"/>
+    <path d="M120 62 l0 -10" stroke="#f87171"/><rect x="118.4" y="55" width="3.2" height="4.4" fill="#f87171"/>
+    <path d="M127 60 l0 -10" stroke="#4ade80"/><rect x="125.4" y="52.6" width="3.2" height="4.6" fill="#4ade80"/>
+  </g>
+
+  <!-- ===== Front cowl: angular plate + headlight glow ===== -->
+  <path d="M148 56 L168 58 L172 70 L162 78 L150 72 Z" fill="url(#carbon)" stroke="#0b1220" stroke-width="1"/>
+  <path d="M148 56 L168 58 L172 70" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="168" cy="66" r="10" fill="url(#headlight)"/>
+  <circle cx="168" cy="66" r="3" fill="#d9f99d"/>
+
+  <!-- ===== Front fender (sharp blade over the front tyre) ===== -->
+  <path d="M148 86 L186 90 L190 98 L182 97 L150 93 Z" fill="url(#carbonLite)" stroke="#0b1220" stroke-width="1"/>
+  <path d="M148 86 L186 90" stroke="#4ade80" stroke-width="1.6" stroke-linecap="round"/>
+
+  <!-- Handlebars -->
+  <path d="M150 58 L157 43" stroke="#0f172a" stroke-width="4" stroke-linecap="round"/>
+  <path d="M157 43 l11 -2" stroke="#020617" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- ===== Trader-rider: dark suit, red tie flying, sleek helmet ===== -->
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- tie flying off the shoulder (behind the torso) -->
+    <path d="M112 52 L98 50 L90 55 L101 54 Z" fill="#ef4444"/>
+    <path d="M98 50 L84 49 L88 54 Z" fill="#dc2626"/>
+    <!-- legs: hip (96,66) -> knee (112,84) -> peg (123,106) -->
+    <path d="M96 66 L112 84 L123 106" fill="none" stroke="#020617" stroke-width="9"/>
+    <path d="M96 66 L112 84 L123 106" fill="none" stroke="#334155" stroke-width="3.5"/>
+    <!-- shoe -->
+    <path d="M123 106 l8 3" stroke="#0b1220" stroke-width="6"/>
+    <!-- torso: hip (96,66) -> shoulder (116,48), suit jacket -->
+    <path d="M94 68 L116 48" stroke="url(#suit)" stroke-width="13"/>
+    <!-- shirt + tie sliver at the collar line -->
+    <path d="M104 59 L114 50" stroke="#e2e8f0" stroke-width="4"/>
+    <path d="M104 59 L113 51" stroke="#ef4444" stroke-width="2"/>
+    <!-- arm: shoulder (116,48) -> grip (166,42), suit sleeve -->
+    <path d="M116 48 L166 42" fill="none" stroke="#0f172a" stroke-width="7"/>
+    <path d="M116 48 L166 42" fill="none" stroke="#475569" stroke-width="2"/>
+    <!-- glove -->
+    <circle cx="166" cy="42" r="4" fill="#22c55e"/>
+    <!-- helmet: sleek shell with a neon visor -->
+    <circle cx="123" cy="39" r="11.5" fill="#0b1220" stroke="#334155" stroke-width="2"/>
+    <path d="M120 36 q9 -3 14 2 l-1.5 6 q-8 2 -13 -1.5 Z" fill="#4ade80" opacity="0.95"/>
+    <path d="M114 32 q7 -6 16 -2" fill="none" stroke="#22c55e" stroke-width="2"/>
+  </g>
+</svg>

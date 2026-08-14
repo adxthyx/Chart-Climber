@@ -37,9 +37,9 @@ export function buildBike(startX: number, startY: number): Bike {
 
   const wheelOpts = {
     density: 0.0012,
-    friction: 1.0,
-    frictionStatic: 1.6,
-    restitution: 0.05,
+    friction: 0.95,
+    frictionStatic: 1.2,
+    restitution: 0.08,
     collisionFilter: { group: BIKE_GROUP, category: CAT_WHEEL, mask: CAT_TERRAIN },
   } as const;
 
@@ -94,9 +94,20 @@ export function buildBike(startX: number, startY: number): Bike {
 // Marker so the engine can identify terrain category in collision pairs.
 export const TERRAIN_CATEGORY = CAT_TERRAIN;
 
-// Rate-limited wheel drive. `accel` is in rad/sec; per-step delta = accel * dtSec.
-// RWD: gas only powers the rear wheel (index 0); braking applies to both.
-// This gives smooth spin-up rather than instant max-speed snap.
+// Rate-limited single-wheel drive. Eases the wheel's angular velocity toward
+// `targetVel` by at most `accel * dtSec` rad this step. Sets velocity DIRECTLY
+// (kinematic) so the drive exerts NO reaction torque on the chassis — the bike spins
+// up smoothly and never rears / wheelies / hops from throttle.
+export function driveWheel(wheel: Body, targetVel: number, accel: number, dtSec: number): void {
+  const delta = accel * dtSec;
+  const diff = targetVel - wheel.angularVelocity;
+  const next =
+    Math.abs(diff) <= delta ? targetVel : wheel.angularVelocity + Math.sign(diff) * delta;
+  Matter.Body.setAngularVelocity(wheel, next);
+}
+
+// Rate-limited drive. `accel` is in rad/sec. RWD by default: gas powers the rear wheel
+// (index 0); braking (rearOnly=false) applies to both.
 export function driveWheels(
   wheels: [Body, Body],
   dir: number,
@@ -105,17 +116,9 @@ export function driveWheels(
   dtSec: number,
   rearOnly = false,
 ): void {
-  const targets: Body[] = rearOnly ? [wheels[0]] : [wheels[0], wheels[1]];
-  const delta = accel * dtSec;
   const targetVel = dir > 0 ? maxSpeed : -maxSpeed;
-  for (const w of targets) {
-    const diff = targetVel - w.angularVelocity;
-    const next =
-      Math.abs(diff) <= delta
-        ? targetVel
-        : w.angularVelocity + Math.sign(diff) * delta;
-    Matter.Body.setAngularVelocity(w, next);
-  }
+  driveWheel(wheels[0], targetVel, accel, dtSec);
+  if (!rearOnly) driveWheel(wheels[1], targetVel, accel, dtSec);
 }
 
 // Pitch the chassis: gas (+1) rotates the nose up for wheelies/back-flips, brake

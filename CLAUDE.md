@@ -17,7 +17,7 @@ npm run lint         # ESLint
 npm run gen:data     # refetch real historical prices from Yahoo Finance into lib/data/static/*.json + registry.ts
 ```
 
-No env vars required. Optional: `STOCK_API_KEY=your_key npm run dev` enables live equity data.
+No env vars required. Optional: `STOCK_API_KEY=your_key npm run dev` enables live equity data; `DATABASE_URL=<neon connection string>` enables the leaderboard (disabled gracefully without it).
 
 ## Architecture
 
@@ -29,12 +29,13 @@ No env vars required. Optional: `STOCK_API_KEY=your_key npm run dev` enables liv
 - `types.ts` — `PricePoint`, `ChartSeries` (`live` = true when fetched live this session, false for bundled snapshot), `Range` (`1M | 6M | 1Y | 5Y`)
 - `static/registry.ts` + `static/*.json` — bundled REAL historical price snapshots, keyed `${SYMBOL}_${RANGE}`
 - `fetchChart.ts` — `getChart(symbol, range)` tries `/api/chart` proxy first, falls back to static; `staticChart()` is the infallible path
-- `scripts/fetch-real-data.mts` (`npm run gen:data`) — fetches real daily history from Yahoo Finance (US tickers as-is, `.NS` for India, `-USD` for crypto) into the bundled JSON. No data is ever synthesized.
+- `scripts/fetch-real-data.mts` (`npm run gen:data`) — fetches real history from Yahoo Finance (US tickers as-is, `.NS` for India, `-USD` for crypto) into the bundled JSON. Candle granularity is per range (`RANGE_INTERVAL` in `types.ts`: 5m for 1M, 1h for 6M/1Y, 1d for 5Y) so every timeframe builds a track of at least 5 km. No data is ever synthesized.
 - `sparkline.ts` — `sparkAllRanges(symbol)` for the picker preview thumbnails
 
-### API route (`app/api/chart/route.ts`)
+### API routes (`app/api/`)
 
-Proxies CoinGecko (crypto, free) and a Twelve-Data-style adapter (equities, needs `STOCK_API_KEY`). Returns bundled static data with `200` on any upstream failure — client never breaks.
+- `chart/route.ts` — proxies CoinGecko (crypto, free) and a Twelve-Data-style adapter (equities, needs `STOCK_API_KEY`). Returns bundled static data with `200` on any upstream failure — client never breaks.
+- `leaderboard/route.ts` — Neon Postgres leaderboard (needs `DATABASE_URL`). `GET ?symbol=&range=` → top 10; `POST` → insert run + return rank + refreshed top 10. Schema is created lazily via `ensureSchema` in `lib/db.ts`. Without `DATABASE_URL` (or on any DB error) responds `200` with `{ enabled: false }` — the game never depends on the DB. Name is optional; blank submits as `Anonymous`. Client helpers + types live in `lib/leaderboard.ts`.
 
 ### Routes (`app/`)
 

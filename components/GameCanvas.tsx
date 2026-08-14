@@ -55,10 +55,10 @@ export function GameCanvas({
       engine.step(input.state, dt);
     };
 
-    const render = () => {
-      const state = engine.getState();
+    const render = (alpha: number) => {
+      const state = engine.getState(alpha);
       // dpr transform persists; draw in CSS pixels.
-      draw(ctx, engine, state, { w: cssW, h: cssH, accent: meta.accent, symbol: meta.symbol });
+      draw(ctx, engine, state, { w: cssW, h: cssH, accent: meta.accent, symbol: meta.symbol }, alpha);
 
       const now = performance.now();
       if (now - lastHud > 90) {
@@ -66,6 +66,7 @@ export function GameCanvas({
         useGameStore.getState().setHud({
           distance: state.distance,
           price: state.price,
+          date: state.date,
           speed: state.bike.speed,
           fuel: state.fuel,
           score: state.score,

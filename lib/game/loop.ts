@@ -8,7 +8,10 @@ export type GameLoop = {
   stop: () => void;
 };
 
-export function createLoop(step: (dt: number) => void, render: () => void): GameLoop {
+export function createLoop(
+  step: (dt: number) => void,
+  render: (alpha: number) => void,
+): GameLoop {
   let raf = 0;
   let last = 0;
   let acc = 0;
@@ -24,7 +27,9 @@ export function createLoop(step: (dt: number) => void, render: () => void): Game
       step(FIXED_DT);
       acc -= FIXED_DT;
     }
-    render();
+    // Fractional progress toward the next step — lets the renderer interpolate the
+    // pose so motion is smooth regardless of display refresh rate.
+    render(acc / FIXED_DT);
     raf = requestAnimationFrame(frame);
   };
 

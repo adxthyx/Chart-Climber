@@ -13,6 +13,8 @@ import {
   RESAMPLE_SUB,
   RUNWAY_SEGMENTS,
   SEGMENT_W,
+  TERRAIN_FRICTION,
+  TERRAIN_SMOOTH,
   TERRAIN_TOP,
 } from './constants';
 import type { Terrain, Vec2 } from './types';
@@ -61,7 +63,7 @@ function resample(ctrl: Vec2[], sub: number): Vec2[] {
 
 const TERRAIN_OPTS = {
   isStatic: true,
-  friction: 0.9,
+  friction: TERRAIN_FRICTION,
   collisionFilter: {
     category: CAT_TERRAIN,
     mask: CAT_WHEEL | CAT_CHASSIS | CAT_HEAD,
@@ -107,6 +109,20 @@ export function buildTerrain(points: PricePoint[]): Terrain {
   const lastClose = closes[n - 1];
   for (let i = 1; i <= RUNWAY_SEGMENTS; i++) {
     mapped.push({ x: lastX + i * SEGMENT_W, y: dataY[n - 1], close: lastClose });
+  }
+
+  // Optional mild low-pass over the data y's (blend ≤ TERRAIN_SMOOTH) — only trims the
+  // sharpest overshoot spikes that catch wheels; the chart's shape/character is kept.
+  // The flat runway/tail points are left untouched.
+  if (TERRAIN_SMOOTH > 0) {
+    const s = Math.min(0.1, TERRAIN_SMOOTH);
+    const lo = RUNWAY_SEGMENTS;
+    const hi = mapped.length - RUNWAY_SEGMENTS - 1;
+    const orig = mapped.map((m) => m.y);
+    for (let i = lo; i <= hi; i++) {
+      const neighbourAvg = (orig[i - 1] + orig[i + 1]) / 2;
+      mapped[i].y = orig[i] * (1 - s) + neighbourAvg * s;
+    }
   }
 
   // Smoothed render/collision surface.
@@ -173,6 +189,15 @@ export function buildTerrain(points: PricePoint[]): Terrain {
   // World-x -> price, for the HUD altitude readout (linear interp over data span).
   const dataStart = dataStartX;
   const dataEnd = dataStartX + (points.length - 1) * SEGMENT_W;
+  // World-x -> surface slope angle (radians), for grounded pitch stabilization.
+  // Sampled from the smoothed collision surface so it matches what the wheels ride.
+  const slopeAt = (x: number): number => {
+    const idx = Math.max(1, Math.min(surface.length - 1, Math.round(x / subW)));
+    const a = surface[idx - 1];
+    const b = surface[idx];
+    return Math.atan2(b.y - a.y, b.x - a.x);
+  };
+
   const priceAt = (x: number): number => {
     if (x <= dataStart) return closes[0];
     if (x >= dataEnd) return lastClose;
@@ -180,6 +205,15 @@ export function buildTerrain(points: PricePoint[]): Terrain {
     const i = Math.floor(f);
     const frac = f - i;
     return closes[i] + (closes[i + 1] - closes[i]) * frac;
+  };
+
+  // World-x -> trading-day timestamp (ms epoch) of the nearest data point, for the
+  // HUD date readout. Runway/tail clamp to the first/last day.
+  const dateAt = (x: number): number => {
+    if (x <= dataStart) return points[0].t;
+    if (x >= dataEnd) return points[n - 1].t;
+    const i = Math.round((x - dataStart) / SEGMENT_W);
+    return points[i].t;
   };
 
   return {
@@ -191,6 +225,8 @@ export function buildTerrain(points: PricePoint[]): Terrain {
     worldWidth,
     floorY,
     priceAt,
+    dateAt,
+    slopeAt,
     minPrice,
     maxPrice,
   };
